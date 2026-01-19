@@ -1,0 +1,286 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TargetType {
+  PERSON
+  ORG_UNIT
+  PROCESS
+}
+
+enum RoleType {
+  GERENCIA
+  PARES
+  AUTO
+}
+
+enum BottleneckReason {
+  TIME
+  APPROVAL
+  INFO
+  QUALITY
+  RESOURCES
+  OTHER
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  users     User[]
+  orgUnits  OrgUnit[]
+  people    Person[]
+  processes Process[]
+  campaigns Campaign[]
+  tokens    Token[]
+  instruments Instrument[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  name      String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model OrgUnit {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  parentId  String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  parent    OrgUnit? @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children  OrgUnit[] @relation("OrgUnitHierarchy")
+  people    Person[]
+}
+
+model Person {
+  id        String   @id @default(cuid())
+  tenantId  String
+  orgUnitId String?
+  name      String
+  title     String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  orgUnit   OrgUnit? @relation(fields: [orgUnitId], references: [id])
+  campaignTargets CampaignTarget[]
+}
+
+model Process {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  description String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  campaignTargets CampaignTarget[]
+}
+
+model Instrument {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  version   Int
+  createdAt DateTime @default(now())
+  sections  Section[]
+  campaigns Campaign[]
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model Section {
+  id           String   @id @default(cuid())
+  instrumentId String
+  title        String
+  order        Int
+  questions    Question[]
+  instrument   Instrument @relation(fields: [instrumentId], references: [id])
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  sectionId String
+  text      String
+  order     Int
+  section   Section  @relation(fields: [sectionId], references: [id])
+  answers   Answer[]
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  targetType  TargetType
+  instrumentId String
+  startsAt    DateTime
+  endsAt      DateTime
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  instrument  Instrument @relation(fields: [instrumentId], references: [id])
+  roles       CampaignRole[]
+  targets     CampaignTarget[]
+  tokens      Token[]
+  responses   Response[]
+  dependencyEdges DependencyEdge[]
+  results     CampaignResult[]
+}
+
+model CampaignRole {
+  id         String   @id @default(cuid())
+  campaignId String
+  label      String
+  roleType   RoleType
+  createdAt  DateTime @default(now())
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+}
+
+model CampaignTarget {
+  id          String   @id @default(cuid())
+  campaignId  String
+  targetType  TargetType
+  personId    String?
+  orgUnitId   String?
+  processId   String?
+  createdAt   DateTime @default(now())
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  person      Person?  @relation(fields: [personId], references: [id])
+  orgUnit     OrgUnit? @relation(fields: [orgUnitId], references: [id])
+  process     Process? @relation(fields: [processId], references: [id])
+  responses   Response[]
+  dependencyEdges DependencyEdge[]
+  results     CampaignResult[]
+}
+
+model Token {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  tenantId    String
+  campaignId  String
+  targetId    String
+  roleLabel   String
+  roleType    RoleType
+  createdAt   DateTime @default(now())
+  usedAt      DateTime?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  responses   Response[]
+}
+
+model Response {
+  id          String   @id @default(cuid())
+  tenantId    String
+  campaignId  String
+  targetId    String
+  tokenId     String
+  roleType    RoleType
+  roleLabel   String
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  target      CampaignTarget @relation(fields: [targetId], references: [id])
+  token       Token    @relation(fields: [tokenId], references: [id])
+  answers     Answer[]
+  dependencyEdges DependencyEdge[]
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  responseId  String
+  questionId  String
+  score       Int
+  comment     String?
+  response    Response @relation(fields: [responseId], references: [id])
+  question    Question @relation(fields: [questionId], references: [id])
+}
+
+model DependencyNode {
+  id        String   @id @default(cuid())
+  tenantId  String
+  nodeType  TargetType
+  nodeRefId String
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  outgoingEdges DependencyEdge[] @relation("DependencyFrom")
+  incomingEdges DependencyEdge[] @relation("DependencyTo")
+}
+
+model DependencyEdge {
+  id            String   @id @default(cuid())
+  tenantId      String
+  campaignId    String
+  targetId      String
+  responseId    String
+  fromNodeId    String
+  toNodeId      String
+  isBottleneck  Boolean  @default(false)
+  bottleneckReason BottleneckReason?
+  optionalComment String?
+  createdAt     DateTime @default(now())
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  target        CampaignTarget @relation(fields: [targetId], references: [id])
+  response      Response @relation(fields: [responseId], references: [id])
+  fromNode      DependencyNode @relation("DependencyFrom", fields: [fromNodeId], references: [id])
+  toNode        DependencyNode @relation("DependencyTo", fields: [toNodeId], references: [id])
+}
+
+model CampaignResult {
+  id            String   @id @default(cuid())
+  campaignId    String
+  targetId      String
+  targetType    TargetType
+  orgIndex      Float?
+  blockGerencia Float?
+  blockPares    Float?
+  blockAuto     Float?
+  perceptionGap Float?
+  dependencyConcentration Float?
+  riskLowScore  Boolean  @default(false)
+  riskGapHigh   Boolean  @default(false)
+  missingRoleTypes RoleType[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  target        CampaignTarget @relation(fields: [targetId], references: [id])
+  questionScores QuestionScore[]
+  sectionScores  SectionScore[]
+  roleScores     RoleScore[]
+}
+
+model QuestionScore {
+  id              String   @id @default(cuid())
+  campaignResultId String
+  questionId      String
+  weightedScore   Float
+  createdAt       DateTime @default(now())
+  campaignResult  CampaignResult @relation(fields: [campaignResultId], references: [id], onDelete: Cascade)
+  question        Question @relation(fields: [questionId], references: [id])
+}
+
+model SectionScore {
+  id              String   @id @default(cuid())
+  campaignResultId String
+  sectionId       String
+  weightedScore   Float
+  createdAt       DateTime @default(now())
+  campaignResult  CampaignResult @relation(fields: [campaignResultId], references: [id], onDelete: Cascade)
+  section         Section @relation(fields: [sectionId], references: [id])
+}
+
+model RoleScore {
+  id              String   @id @default(cuid())
+  campaignResultId String
+  roleType        RoleType
+  roleLabel       String
+  averageScore    Float
+  responseCount   Int
+  createdAt       DateTime @default(now())
+  campaignResult  CampaignResult @relation(fields: [campaignResultId], references: [id], onDelete: Cascade)
+}
